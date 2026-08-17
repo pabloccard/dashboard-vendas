@@ -22,8 +22,8 @@ const EVENT_STATUS_MAP: Record<string, string> = {
 
 export async function POST(request: NextRequest) {
   try {
-    // Validate hottok
-    const hottok = request.headers.get('x-hotmart-hottok');
+    const body = await request.json();
+    const hottok = request.headers.get('x-hotmart-hottok') || body?.hottok;
 
     if (!hottok) {
       return NextResponse.json({ error: 'Missing hottok' }, { status: 401 });
@@ -41,7 +41,6 @@ export async function POST(request: NextRequest) {
     }
 
     const userId = settingsData.user_id;
-    const body = await request.json();
 
     const { id: eventId, event, data } = body;
 
@@ -68,13 +67,30 @@ export async function POST(request: NextRequest) {
 
     // Get net value (producer commission)
     const producerCommission = commissions.find(
-      (c: { source: string; value: number }) => c.source === 'PRODUCER'
+      (c: any) => c.source === 'PRODUCER'
     );
     const netValue = producerCommission?.value || grossValue;
 
-    // Convert to BRL if needed
-    const { valueBRL: grossBRL, exchangeRate } = await convertToMBRL(grossValue, currency);
-    const { valueBRL: netBRL } = await convertToMBRL(netValue, currency);
+    // Convert to BRL
+    let grossBRL = grossValue;
+    let netBRL = netValue;
+    let exchangeRate = 1;
+
+    if (currency !== 'BRL') {
+      if (producerCommission?.currency_conversion?.converted_to_currency === 'BRL') {
+        // Use Hotmart's native conversion
+        netBRL = producerCommission.currency_conversion.converted_value;
+        exchangeRate = producerCommission.currency_conversion.conversion_rate || 1;
+        grossBRL = grossValue * exchangeRate;
+      } else {
+        // Fallback to our exchange rate API
+        const convertedGross = await convertToMBRL(grossValue, currency);
+        const convertedNet = await convertToMBRL(netValue, currency);
+        grossBRL = convertedGross.valueBRL;
+        netBRL = convertedNet.valueBRL;
+        exchangeRate = convertedGross.exchangeRate;
+      }
+    }
 
     // Find matching product
     let productId = null;
