@@ -7,13 +7,16 @@ import { formatCurrency, formatPercentage, formatNumber, getDateRange } from '@/
 import MetricCard from '@/components/MetricCard';
 import DateFilter from '@/components/DateFilter';
 import ProductFilter from '@/components/ProductFilter';
+import AdAccountFilter from '@/components/AdAccountFilter';
 import DailyTable from '@/components/DailyTable';
 
 export default function DashboardPage() {
   const supabase = createClient();
   const [datePreset, setDatePreset] = useState<DatePreset>('today');
-  const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
+  const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
+  const [selectedAdAccounts, setSelectedAdAccounts] = useState<string[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [adAccounts, setAdAccounts] = useState<any[]>([]);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [daily, setDaily] = useState<DailyBreakdown[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,18 +32,19 @@ export default function DashboardPage() {
     getUser();
   }, [supabase.auth]);
 
-  // Fetch products
+  // Fetch products and accounts
   useEffect(() => {
     if (!userId) return;
-    const fetchProducts = async () => {
-      const { data } = await supabase
-        .from('products')
-        .select('*')
-        .eq('user_id', userId)
-        .order('name');
-      if (data) setProducts(data);
+    const fetchDropdowns = async () => {
+      const [productsRes, accountsRes] = await Promise.all([
+        supabase.from('products').select('*').eq('user_id', userId).order('name'),
+        supabase.from('ad_accounts').select('*').eq('user_id', userId).order('fb_account_name')
+      ]);
+      
+      if (productsRes.data) setProducts(productsRes.data);
+      if (accountsRes.data) setAdAccounts(accountsRes.data);
     };
-    fetchProducts();
+    fetchDropdowns();
   }, [userId, supabase]);
 
   // Fetch metrics
@@ -56,8 +60,11 @@ export default function DashboardPage() {
       user_id: userId,
     });
 
-    if (selectedProduct) {
-      params.set('product_id', selectedProduct);
+    if (selectedProducts.length > 0) {
+      params.set('product_ids', selectedProducts.join(','));
+    }
+    if (selectedAdAccounts.length > 0) {
+      params.set('ad_account_ids', selectedAdAccounts.join(','));
     }
 
     try {
@@ -71,7 +78,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [userId, datePreset, selectedProduct]);
+  }, [userId, datePreset, selectedProducts, selectedAdAccounts]);
 
   // Sync with Facebook and then fetch metrics
   const syncAndFetch = useCallback(async (isManualSync = false) => {
@@ -112,12 +119,17 @@ export default function DashboardPage() {
     <>
       <div className="page-header">
         <h1 className="page-title">Dashboard</h1>
-        <div className="page-filters" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
+        <div className="page-filters" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', flexWrap: 'wrap' }}>
           <DateFilter selected={datePreset} onChange={setDatePreset} />
+          <AdAccountFilter
+            accounts={adAccounts}
+            selectedIds={selectedAdAccounts}
+            onChange={setSelectedAdAccounts}
+          />
           <ProductFilter
             products={products}
-            selected={selectedProduct}
-            onChange={setSelectedProduct}
+            selectedIds={selectedProducts}
+            onChange={setSelectedProducts}
           />
           <button 
             className="btn btn-secondary btn-sm" 

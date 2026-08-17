@@ -20,7 +20,6 @@ export default function SettingsPage() {
   // Ad Account form
   const [newAdAccountId, setNewAdAccountId] = useState('');
   const [newAdAccountName, setNewAdAccountName] = useState('');
-  const [newAdAccountProduct, setNewAdAccountProduct] = useState('');
 
   // Settings form
   const [hottok, setHottok] = useState('');
@@ -49,7 +48,7 @@ export default function SettingsPage() {
 
     const [productsRes, adAccountsRes, settingsRes] = await Promise.all([
       supabase.from('products').select('*').eq('user_id', userId).order('name'),
-      supabase.from('ad_accounts').select('*, product:products(name)').eq('user_id', userId),
+      supabase.from('ad_accounts').select('*').eq('user_id', userId),
       supabase.from('settings').select('*').eq('user_id', userId).single(),
     ]);
 
@@ -140,7 +139,6 @@ export default function SettingsPage() {
       const { error } = await supabase.from('ad_accounts').update({
         fb_account_id: newAdAccountId.replace('act_', ''),
         fb_account_name: newAdAccountName || null,
-        product_id: newAdAccountProduct || null,
       }).eq('id', editingAdAccountId);
 
       if (error) {
@@ -155,7 +153,6 @@ export default function SettingsPage() {
         user_id: userId,
         fb_account_id: newAdAccountId.replace('act_', ''),
         fb_account_name: newAdAccountName || null,
-        product_id: newAdAccountProduct || null,
       });
 
       if (error) {
@@ -172,7 +169,6 @@ export default function SettingsPage() {
     setEditingAdAccountId(account.id);
     setNewAdAccountId(account.fb_account_id);
     setNewAdAccountName(account.fb_account_name || '');
-    setNewAdAccountProduct(account.product_id || '');
     setShowAdAccountModal(true);
   };
 
@@ -180,7 +176,6 @@ export default function SettingsPage() {
     setEditingAdAccountId(null);
     setNewAdAccountId('');
     setNewAdAccountName('');
-    setNewAdAccountProduct('');
     setShowAdAccountModal(false);
   };
 
@@ -366,7 +361,6 @@ export default function SettingsPage() {
                 </span>
                 <span className="settings-item-detail">
                   ID: act_{account.fb_account_id}
-                  {account.product && ` • Produto: ${(account.product as unknown as Product).name}`}
                 </span>
               </div>
               <div className="settings-actions">
@@ -466,20 +460,6 @@ export default function SettingsPage() {
                   value={newAdAccountName}
                   onChange={(e) => setNewAdAccountName(e.target.value)}
                 />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Produto vinculado</label>
-                <select
-                  className="form-input"
-                  value={newAdAccountProduct}
-                  onChange={(e) => setNewAdAccountProduct(e.target.value)}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <option value="">Nenhum</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
               </div>
               <div className="modal-actions">
                 <button type="button" className="btn btn-secondary" onClick={closeAdAccountModal}>

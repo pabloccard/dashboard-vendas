@@ -11,7 +11,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const dateFrom = searchParams.get('date_from');
     const dateTo = searchParams.get('date_to');
-    const productId = searchParams.get('product_id');
+    const productIdsStr = searchParams.get('product_ids');
+    const adAccountIdsStr = searchParams.get('ad_account_ids');
     const userId = searchParams.get('user_id');
 
     if (!dateFrom || !dateTo || !userId) {
@@ -33,8 +34,11 @@ export async function GET(request: NextRequest) {
       .gte('transaction_date', dateFromStart)
       .lte('transaction_date', dateToEnd);
 
-    if (productId) {
-      txQuery = txQuery.eq('product_id', productId);
+    const productIds = productIdsStr ? productIdsStr.split(',').filter(Boolean) : [];
+    const adAccountIds = adAccountIdsStr ? adAccountIdsStr.split(',').filter(Boolean) : [];
+
+    if (productIds.length > 0) {
+      txQuery = txQuery.in('product_id', productIds);
     }
 
     const { data: transactions, error: txError } = await txQuery;
@@ -47,13 +51,13 @@ export async function GET(request: NextRequest) {
     // ===== AD SPEND QUERY =====
     let adQuery = supabase
       .from('ad_spend_daily')
-      .select('*, ad_accounts!inner(product_id)')
+      .select('*')
       .eq('user_id', userId)
       .gte('date', dateFrom)
       .lte('date', dateTo);
 
-    if (productId) {
-      adQuery = adQuery.eq('ad_accounts.product_id', productId);
+    if (adAccountIds.length > 0) {
+      adQuery = adQuery.in('ad_account_id', adAccountIds);
     }
 
     const { data: adSpend, error: adError } = await adQuery;
