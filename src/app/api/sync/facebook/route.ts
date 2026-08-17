@@ -50,12 +50,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'No ad accounts found' }, { status: 200 });
     }
 
-    // Sync last 7 days for each account
+    // Sync last 30 days for each account to ensure we have enough history
     const today = new Date();
-    const weekAgo = new Date(today);
-    weekAgo.setDate(weekAgo.getDate() - 7);
+    const pastDate = new Date(today);
+    pastDate.setDate(pastDate.getDate() - 30);
 
-    const dateFrom = weekAgo.toISOString().split('T')[0];
+    const dateFrom = pastDate.toISOString().split('T')[0];
     const dateTo = today.toISOString().split('T')[0];
 
     const results = [];
