@@ -36,6 +36,7 @@ export type Transaction = {
   transaction_date: string;
   hotmart_event_id: string | null;
   created_at: string;
+  product?: Product;
 };
 
 export type AdSpendDaily = {

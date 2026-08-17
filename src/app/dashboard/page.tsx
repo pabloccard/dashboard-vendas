@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { DashboardMetrics, DailyBreakdown, DatePreset, Product } from '@/types';
+import { DashboardMetrics, DailyBreakdown, DatePreset, Product, Transaction } from '@/types';
 import { formatCurrency, formatPercentage, formatNumber, getDateRange } from '@/lib/utils';
 import MetricCard from '@/components/MetricCard';
 import DateFilter from '@/components/DateFilter';
