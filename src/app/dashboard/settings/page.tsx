@@ -24,6 +24,7 @@ export default function SettingsPage() {
   // Settings form
   const [hottok, setHottok] = useState('');
   const [fbToken, setFbToken] = useState('');
+  const [fbTaxPercentage, setFbTaxPercentage] = useState<number | ''>('');
   const [webhookUrl, setWebhookUrl] = useState('');
 
   // Modal states
@@ -58,6 +59,7 @@ export default function SettingsPage() {
       setSettings(settingsRes.data);
       setHottok(settingsRes.data.hotmart_hottok || '');
       setFbToken(settingsRes.data.fb_access_token || '');
+      setFbTaxPercentage(settingsRes.data.fb_tax_percentage || '');
     }
   }, [userId, supabase]);
 
@@ -197,14 +199,23 @@ export default function SettingsPage() {
     if (settings) {
       const { error } = await supabase
         .from('settings')
-        .update({ hotmart_hottok: hottok, fb_access_token: fbToken })
+        .update({ 
+          hotmart_hottok: hottok, 
+          fb_access_token: fbToken,
+          fb_tax_percentage: fbTaxPercentage === '' ? 0 : Number(fbTaxPercentage)
+        })
         .eq('user_id', userId);
       if (error) showMessage('error', `Erro: ${error.message}`);
       else showMessage('success', 'Configurações salvas!');
     } else {
       const { error } = await supabase
         .from('settings')
-        .insert({ user_id: userId, hotmart_hottok: hottok, fb_access_token: fbToken });
+        .insert({ 
+          user_id: userId, 
+          hotmart_hottok: hottok, 
+          fb_access_token: fbToken,
+          fb_tax_percentage: fbTaxPercentage === '' ? 0 : Number(fbTaxPercentage)
+        });
       if (error) showMessage('error', `Erro: ${error.message}`);
       else showMessage('success', 'Configurações salvas!');
     }
@@ -281,6 +292,18 @@ export default function SettingsPage() {
               placeholder="System User Token..."
               value={fbToken}
               onChange={(e) => setFbToken(e.target.value)}
+            />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">Imposto sobre Anúncios (%)</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              className="form-input"
+              placeholder="Ex: 4.38"
+              value={fbTaxPercentage}
+              onChange={(e) => setFbTaxPercentage(e.target.value ? Number(e.target.value) : '')}
             />
           </div>
         </div>

@@ -48,6 +48,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: txError.message }, { status: 500 });
     }
 
+    // ===== SETTINGS QUERY =====
+    const { data: settings } = await supabase
+      .from('settings')
+      .select('fb_tax_percentage')
+      .eq('user_id', userId)
+      .single();
+    
+    const taxMultiplier = 1 + ((settings?.fb_tax_percentage || 0) / 100);
+
     // ===== AD SPEND QUERY =====
     let adQuery = supabase
       .from('ad_spend_daily')
@@ -78,7 +87,7 @@ export async function GET(request: NextRequest) {
 
     const grossRevenue = approvedTx.reduce((sum, t) => sum + Number(t.gross_value_brl), 0);
     const netRevenue = approvedTx.reduce((sum, t) => sum + Number(t.net_value_brl), 0);
-    const totalAdSpend = (adSpend || []).reduce((sum, a) => sum + Number(a.spend), 0);
+    const totalAdSpend = (adSpend || []).reduce((acc, curr) => acc + (Number(curr.spend) * taxMultiplier), 0);
     const profit = netRevenue - totalAdSpend;
     const roi = totalAdSpend > 0 ? ((netRevenue - totalAdSpend) / totalAdSpend) * 100 : 0;
     const cpa = approvedTx.length > 0 ? totalAdSpend / approvedTx.length : 0;
@@ -141,7 +150,7 @@ export async function GET(request: NextRequest) {
     for (const ad of adSpend || []) {
       const entry = dailyMap.get(ad.date);
       if (!entry) continue;
-      entry.ad_spend += Number(ad.spend);
+      entry.ad_spend += Number(ad.spend) * taxMultiplier;
     }
 
     // Build daily breakdown array

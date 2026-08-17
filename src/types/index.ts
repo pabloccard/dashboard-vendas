@@ -56,6 +56,7 @@ export type Settings = {
   user_id: string;
   hotmart_hottok: string | null;
   fb_access_token: string | null;
+  fb_tax_percentage?: number;
   timezone: string;
   created_at: string;
 };

@@ -4,12 +4,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { DashboardMetrics, DailyBreakdown, DatePreset, Product, Transaction } from '@/types';
 import { formatCurrency, formatPercentage, formatNumber, getDateRange } from '@/lib/utils';
-import MetricCard from '@/components/MetricCard';
 import DateFilter from '@/components/DateFilter';
 import ProductFilter from '@/components/ProductFilter';
 import AdAccountFilter from '@/components/AdAccountFilter';
 import DailyTable from '@/components/DailyTable';
-import TransactionList from '@/components/TransactionList';
+import MainChart from '@/components/MainChart';
+import MiniChart from '@/components/MiniChart';
 
 export default function DashboardPage() {
   const supabase = createClient();
@@ -21,12 +21,11 @@ export default function DashboardPage() {
   const [adAccounts, setAdAccounts] = useState<any[]>([]);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [daily, setDaily] = useState<DailyBreakdown[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [recentTx, setRecentTx] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
 
-  // Get user ID
   useEffect(() => {
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -35,7 +34,6 @@ export default function DashboardPage() {
     getUser();
   }, [supabase.auth]);
 
-  // Fetch products and accounts
   useEffect(() => {
     if (!userId) return;
     const fetchDropdowns = async () => {
@@ -43,245 +41,219 @@ export default function DashboardPage() {
         supabase.from('products').select('*').eq('user_id', userId).order('name'),
         supabase.from('ad_accounts').select('*').eq('user_id', userId).order('fb_account_name')
       ]);
-      
       if (productsRes.data) setProducts(productsRes.data);
       if (accountsRes.data) setAdAccounts(accountsRes.data);
     };
     fetchDropdowns();
   }, [userId, supabase]);
 
-  // Fetch metrics
   const fetchMetrics = useCallback(async () => {
     if (!userId) return;
-
     setLoading(true);
+
     let from, to;
     if (datePreset === 'custom' && customDate) {
-      from = customDate;
-      to = customDate;
+      from = customDate; to = customDate;
     } else {
       const range = getDateRange(datePreset);
-      from = range.from;
-      to = range.to;
+      from = range.from; to = range.to;
     }
 
-    const params = new URLSearchParams({
-      date_from: from,
-      date_to: to,
-      user_id: userId,
-    });
-
-    if (selectedProducts.length > 0) {
-      params.set('product_ids', selectedProducts.join(','));
-    }
-    if (selectedAdAccounts.length > 0) {
-      params.set('ad_account_ids', selectedAdAccounts.join(','));
-    }
+    const params = new URLSearchParams({ date_from: from, date_to: to, user_id: userId });
+    if (selectedProducts.length > 0) params.set('product_ids', selectedProducts.join(','));
+    if (selectedAdAccounts.length > 0) params.set('ad_account_ids', selectedAdAccounts.join(','));
 
     try {
-      const response = await fetch(`/api/metrics?${params.toString()}`);
-      const data = await response.json();
-
+      const res = await fetch(`/api/metrics?${params.toString()}`);
+      const data = await res.json();
       if (data.metrics) setMetrics(data.metrics);
       if (data.daily) setDaily(data.daily);
-      if (data.transactions) setTransactions(data.transactions);
-    } catch (error) {
-      console.error('Failed to fetch metrics:', error);
+      if (data.transactions) setRecentTx(data.transactions.slice(0, 8));
+    } catch (err) {
+      console.error('Failed to fetch metrics:', err);
     } finally {
       setLoading(false);
     }
   }, [userId, datePreset, customDate, selectedProducts, selectedAdAccounts]);
 
-  // Sync with Facebook and then fetch metrics
   const syncAndFetch = useCallback(async (isManualSync = false) => {
     if (!userId) return;
-    
-    // Only show syncing spinner for manual sync, otherwise do it silently in background
     if (isManualSync) setSyncing(true);
-    
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      // Call sync API
-      await fetch('/api/sync/facebook', {
-        method: 'POST',
-        headers: {
-          'x-user-token': session?.access_token || '',
-        },
-      });
-      // After sync is done, refetch metrics to show new data
+      await fetch('/api/sync/facebook', { method: 'POST', headers: { 'x-user-token': session?.access_token || '' } });
       await fetchMetrics();
-    } catch (error) {
-      console.error('Failed to sync:', error);
-      // If sync fails, at least try to fetch metrics
+    } catch (err) {
+      console.error('Sync failed:', err);
       await fetchMetrics();
     } finally {
       if (isManualSync) setSyncing(false);
     }
   }, [userId, fetchMetrics, supabase.auth]);
 
-  // Initial load: Fetch metrics immediately to show something, then sync in background
   useEffect(() => {
-    if (userId) {
-      fetchMetrics(); // Show fast
-      syncAndFetch(); // Background sync
-    }
+    if (userId) { fetchMetrics(); syncAndFetch(); }
   }, [userId, fetchMetrics, syncAndFetch]);
+
+  const profit = metrics?.profit || 0;
+  const roi = metrics?.roi || 0;
 
   return (
     <>
+      {/* Header */}
       <div className="page-header">
-        <h1 className="page-title">Dashboard</h1>
-        <div className="page-filters" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', flexWrap: 'wrap' }}>
-          <DateFilter 
-            selected={datePreset} 
-            customDate={customDate}
-            onChange={(preset, date) => {
-              setDatePreset(preset);
-              if (date) setCustomDate(date);
-            }} 
-          />
-          <AdAccountFilter
-            accounts={adAccounts}
-            selectedIds={selectedAdAccounts}
-            onChange={setSelectedAdAccounts}
-          />
-          <ProductFilter
-            products={products}
-            selectedIds={selectedProducts}
-            onChange={setSelectedProducts}
-          />
-          <button 
-            className="btn btn-secondary btn-sm" 
-            onClick={() => syncAndFetch(true)}
-            disabled={syncing || loading}
-            style={{ height: '38px', display: 'flex', alignItems: 'center', gap: '8px' }}
-          >
-            <svg 
-              width="16" 
-              height="16" 
-              viewBox="0 0 24 24" 
-              fill="none" 
-              stroke="currentColor" 
-              strokeWidth="2" 
-              className={syncing ? "spin-animation" : ""}
-            >
-              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.92-10.26l5.43 3.27" />
+        <div>
+          <h1 className="page-title">Dashboard</h1>
+          <p className="page-subtitle">Acompanhe suas métricas de vendas e anúncios</p>
+        </div>
+        <div className="page-filters">
+          <DateFilter selected={datePreset} customDate={customDate} onChange={(p, d) => { setDatePreset(p); if (d) setCustomDate(d); }} />
+          <AdAccountFilter accounts={adAccounts} selectedIds={selectedAdAccounts} onChange={setSelectedAdAccounts} />
+          <ProductFilter products={products} selectedIds={selectedProducts} onChange={setSelectedProducts} />
+          <button className="btn btn-secondary btn-sm" onClick={() => syncAndFetch(true)} disabled={syncing || loading} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={syncing ? 'spin-animation' : ''}>
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.92-10.26" />
             </svg>
-            {syncing ? 'Atualizando...' : 'Atualizar Dados'}
+            {syncing ? 'Sincronizando...' : 'Atualizar'}
           </button>
         </div>
       </div>
 
       {loading && !metrics ? (
-        <div className="loading-spinner">
-          <div className="spinner" />
-        </div>
+        <div className="loading-spinner"><div className="spinner" /></div>
       ) : (
         <>
-          <div className="metrics-grid">
-            <MetricCard
-              label="Faturamento Líquido"
-              value={formatCurrency(metrics?.net_revenue || 0)}
-              accent="primary"
-              featured
-              icon={
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="12" y1="1" x2="12" y2="23" />
-                  <path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
-                </svg>
-              }
-              subtitle={`Bruto: ${formatCurrency(metrics?.gross_revenue || 0)}`}
-            />
+          {/* ===== HERO SECTION ===== */}
+          <div className="hero-grid">
+            {/* Left — Big revenue card */}
+            <div className="hero-card">
+              <div>
+                <div className="hero-card-label">
+                  Faturamento Líquido
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                  <div className="hero-card-value" style={{ margin: '16px 0 8px' }}>
+                    {formatCurrency(metrics?.net_revenue || 0)}
+                  </div>
+                  {profit !== 0 && (
+                    <span className={`hero-badge ${profit >= 0 ? 'positive' : 'negative'}`} style={{ marginTop: '8px' }}>
+                      {profit > 0 ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M7 7h10v10"/><path d="M7 17 17 7"/>
+                        </svg>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="m7 7 10 10"/><path d="M17 7v10H7"/>
+                        </svg>
+                      )}
+                      {profit > 0 ? '+' : ''}{formatCurrency(profit)}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="hero-card-footer">
+                <span style={{ fontSize: '12px', color: 'var(--text-3)' }}>
+                  Bruto: {formatCurrency(metrics?.gross_revenue || 0)}
+                </span>
+              </div>
+            </div>
 
-            <MetricCard
-              label="Gasto com Anúncios"
-              value={formatCurrency(metrics?.ad_spend || 0)}
-              accent="red"
-              icon={
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="23,6 13.5,15.5 8.5,10.5 1,18" />
-                  <polyline points="17,6 23,6 23,12" />
-                </svg>
-              }
-            />
-
-            <MetricCard
-              label="Lucro"
-              value={formatCurrency(metrics?.profit || 0)}
-              accent={(metrics?.profit || 0) >= 0 ? 'green' : 'red'}
-              icon={
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
-                </svg>
-              }
-            />
-
-            <MetricCard
-              label="ROI"
-              value={formatPercentage(metrics?.roi || 0)}
-              accent={(metrics?.roi || 0) >= 0 ? 'green' : 'red'}
-              icon={
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="10" />
-                  <polyline points="12,16 12,12" />
-                  <line x1="12" y1="8" x2="12.01" y2="8" />
-                </svg>
-              }
-            />
-
-            <MetricCard
-              label="CPA"
-              value={metrics?.approved_count ? formatCurrency(metrics?.cpa || 0) : '—'}
-              accent="blue"
-              icon={
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2" />
-                  <circle cx="9" cy="7" r="4" />
-                  <path d="M23 21v-2a4 4 0 00-3-3.87" />
-                  <path d="M16 3.13a4 4 0 010 7.75" />
-                </svg>
-              }
-              subtitle="Custo por aquisição"
-            />
-
-            <MetricCard
-              label="Vendas Aprovadas"
-              value={formatNumber(metrics?.approved_count || 0)}
-              accent="green"
-              icon={
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20,6 9,17 4,12" />
-                </svg>
-              }
-            />
-
-            <MetricCard
-              label="Vendas Pendentes"
-              value={formatNumber(metrics?.pending_count || 0)}
-              accent="yellow"
-              icon={
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="10" />
-                  <polyline points="12,6 12,12 16,14" />
-                </svg>
-              }
-            />
-
-            <MetricCard
-              label="Reembolsos"
-              value={formatNumber(metrics?.refunded_count || 0)}
-              accent="red"
-              icon={
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="1,4 1,10 7,10" />
-                  <path d="M3.51 15a9 9 0 102.13-9.36L1 10" />
-                </svg>
-              }
-            />
+            {/* Right — Two cards in the same row container */}
+            <div className="side-cards-container">
+              <div className="side-card accent-red">
+                <div>
+                  <span className="side-card-label">Gasto com Anúncios</span>
+                  <div className="side-card-value" style={{ color: 'var(--red)' }}>
+                    {formatCurrency(metrics?.ad_spend || 0)}
+                  </div>
+                </div>
+                <MiniChart data={daily} dataKey="ad_spend" color="var(--red)" />
+              </div>
+              <div className={`side-card ${profit >= 0 ? 'accent-green' : 'accent-red'}`}>
+                <div>
+                  <span className="side-card-label">Lucro</span>
+                  <div className="side-card-value" style={{ color: profit >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                    {formatCurrency(profit)}
+                  </div>
+                </div>
+                <MiniChart data={daily} dataKey="profit" color={profit >= 0 ? 'var(--green)' : 'var(--red)'} />
+              </div>
+            </div>
           </div>
 
-          <DailyTable data={daily} loading={loading} />
-          <TransactionList transactions={transactions} />
+          {/* ===== STATS ROW ===== */}
+          <div className="stats-row">
+            <div className="stat-card">
+              <div className="stat-card-label">ROI</div>
+              <div className={`stat-card-value ${roi >= 0 ? 'green' : 'red'}`}>
+                {metrics?.ad_spend ? (metrics.net_revenue / metrics.ad_spend).toFixed(2) : '0.00'}x
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-label">CPA</div>
+              <div className="stat-card-value blue">
+                {metrics?.approved_count ? formatCurrency(metrics?.cpa || 0) : '—'}
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-label">Aprovadas</div>
+              <div className="stat-card-value green">{formatNumber(metrics?.approved_count || 0)}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-label">Pendentes</div>
+              <div className="stat-card-value yellow">{formatNumber(metrics?.pending_count || 0)}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card-label">Reembolsos</div>
+              <div className="stat-card-value red">{formatNumber(metrics?.refunded_count || 0)}</div>
+            </div>
+          </div>
+
+          {/* ===== TWO COLUMNS ===== */}
+          <div className="content-grid" style={{ gridTemplateColumns: '1fr' }}>
+
+            {/* Right — Recent activity */}
+            <div className="card">
+              <div className="card-header">
+                <span className="card-title">Atividade Recente</span>
+              </div>
+              <div className="card-body">
+                {recentTx.length === 0 ? (
+                  <div className="empty-state">
+                    <div className="empty-state-icon">📋</div>
+                    <p className="empty-state-text">Nenhuma transação neste período</p>
+                  </div>
+                ) : (
+                  recentTx.map((tx) => {
+                    const d = new Date(tx.transaction_date);
+                    const isApproved = tx.status === 'APPROVED';
+                    const isPending = tx.status === 'PENDING';
+                    const statusClass = isApproved ? 'approved' : isPending ? 'pending' : 'refunded';
+                    const statusIcon = isApproved ? '✓' : isPending ? '⏳' : '↩';
+
+                    return (
+                      <div className="activity-item" key={tx.id}>
+                        <div className={`activity-dot ${statusClass}`}>{statusIcon}</div>
+                        <div className="activity-info">
+                          <div className="activity-name">{tx.product?.name || 'Produto'}</div>
+                          <div className="activity-date">
+                            {d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} · {d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </div>
+                        <div className="activity-value" style={{ color: isApproved ? 'var(--green)' : 'var(--text-3)' }}>
+                          {isApproved ? '+' : ''}{formatCurrency(tx.net_value_brl)}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: '24px' }}>
+            <DailyTable data={daily} loading={loading} />
+          </div>
         </>
       )}
     </>
