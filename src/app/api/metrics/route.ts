@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     // ===== TRANSACTIONS QUERY =====
     let txQuery = supabase
       .from('transactions')
-      .select('*')
+      .select('*, product:products(name)')
       .eq('user_id', userId)
       .gte('transaction_date', dateFromStart)
       .lte('transaction_date', dateToEnd);
@@ -160,7 +160,12 @@ export async function GET(request: NextRequest) {
       }))
       .sort((a, b) => b.date.localeCompare(a.date)); // Most recent first
 
-    return NextResponse.json({ metrics, daily }, { status: 200 });
+    // Sort transactions by date descending
+    const rawTransactions = (transactions || []).sort((a, b) => 
+      new Date(b.transaction_date).getTime() - new Date(a.transaction_date).getTime()
+    );
+
+    return NextResponse.json({ metrics, daily, transactions: rawTransactions }, { status: 200 });
   } catch (error) {
     console.error('Metrics error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

@@ -9,6 +9,7 @@ import DateFilter from '@/components/DateFilter';
 import ProductFilter from '@/components/ProductFilter';
 import AdAccountFilter from '@/components/AdAccountFilter';
 import DailyTable from '@/components/DailyTable';
+import TransactionList from '@/components/TransactionList';
 
 export default function DashboardPage() {
   const supabase = createClient();
@@ -20,6 +21,7 @@ export default function DashboardPage() {
   const [adAccounts, setAdAccounts] = useState<any[]>([]);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [daily, setDaily] = useState<DailyBreakdown[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -82,6 +84,7 @@ export default function DashboardPage() {
 
       if (data.metrics) setMetrics(data.metrics);
       if (data.daily) setDaily(data.daily);
+      if (data.transactions) setTransactions(data.transactions);
     } catch (error) {
       console.error('Failed to fetch metrics:', error);
     } finally {
@@ -278,6 +281,7 @@ export default function DashboardPage() {
           </div>
 
           <DailyTable data={daily} loading={loading} />
+          <TransactionList transactions={transactions} />
         </>
       )}
     </>
