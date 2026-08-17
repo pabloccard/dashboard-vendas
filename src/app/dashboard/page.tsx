@@ -13,6 +13,7 @@ import DailyTable from '@/components/DailyTable';
 export default function DashboardPage() {
   const supabase = createClient();
   const [datePreset, setDatePreset] = useState<DatePreset>('today');
+  const [customDate, setCustomDate] = useState<string>('');
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [selectedAdAccounts, setSelectedAdAccounts] = useState<string[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -52,7 +53,15 @@ export default function DashboardPage() {
     if (!userId) return;
 
     setLoading(true);
-    const { from, to } = getDateRange(datePreset);
+    let from, to;
+    if (datePreset === 'custom' && customDate) {
+      from = customDate;
+      to = customDate;
+    } else {
+      const range = getDateRange(datePreset);
+      from = range.from;
+      to = range.to;
+    }
 
     const params = new URLSearchParams({
       date_from: from,
@@ -78,7 +87,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [userId, datePreset, selectedProducts, selectedAdAccounts]);
+  }, [userId, datePreset, customDate, selectedProducts, selectedAdAccounts]);
 
   // Sync with Facebook and then fetch metrics
   const syncAndFetch = useCallback(async (isManualSync = false) => {
@@ -120,7 +129,14 @@ export default function DashboardPage() {
       <div className="page-header">
         <h1 className="page-title">Dashboard</h1>
         <div className="page-filters" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', flexWrap: 'wrap' }}>
-          <DateFilter selected={datePreset} onChange={setDatePreset} />
+          <DateFilter 
+            selected={datePreset} 
+            customDate={customDate}
+            onChange={(preset, date) => {
+              setDatePreset(preset);
+              if (date) setCustomDate(date);
+            }} 
+          />
           <AdAccountFilter
             accounts={adAccounts}
             selectedIds={selectedAdAccounts}
