@@ -31,6 +31,7 @@ export default function SettingsPage() {
   const [showProductModal, setShowProductModal] = useState(false);
   const [showAdAccountModal, setShowAdAccountModal] = useState(false);
   const [editingAdAccountId, setEditingAdAccountId] = useState<string | null>(null);
+  const [editingProductId, setEditingProductId] = useState<string | null>(null);
 
   const [message, setMessage] = useState({ type: '', text: '' });
 
@@ -75,21 +76,48 @@ export default function SettingsPage() {
     e.preventDefault();
     if (!userId) return;
 
-    const { error } = await supabase.from('products').insert({
-      user_id: userId,
-      name: newProductName,
-      hotmart_product_id: parseInt(newProductHotmartId),
-    });
+    if (editingProductId) {
+      const { error } = await supabase.from('products').update({
+        name: newProductName,
+        hotmart_product_id: parseInt(newProductHotmartId),
+      }).eq('id', editingProductId);
 
-    if (error) {
-      showMessage('error', `Erro: ${error.message}`);
+      if (error) {
+        showMessage('error', `Erro: ${error.message}`);
+      } else {
+        showMessage('success', 'Produto atualizado!');
+        closeProductModal();
+        fetchData();
+      }
     } else {
-      showMessage('success', 'Produto adicionado!');
-      setNewProductName('');
-      setNewProductHotmartId('');
-      setShowProductModal(false);
-      fetchData();
+      const { error } = await supabase.from('products').insert({
+        user_id: userId,
+        name: newProductName,
+        hotmart_product_id: parseInt(newProductHotmartId),
+      });
+
+      if (error) {
+        showMessage('error', `Erro: ${error.message}`);
+      } else {
+        showMessage('success', 'Produto adicionado!');
+        closeProductModal();
+        fetchData();
+      }
     }
+  };
+
+  const openEditProduct = (product: Product) => {
+    setEditingProductId(product.id);
+    setNewProductName(product.name);
+    setNewProductHotmartId(product.hotmart_product_id.toString());
+    setShowProductModal(true);
+  };
+
+  const closeProductModal = () => {
+    setEditingProductId(null);
+    setNewProductName('');
+    setNewProductHotmartId('');
+    setShowProductModal(false);
   };
 
   const deleteProduct = async (id: string) => {
@@ -295,6 +323,9 @@ export default function SettingsPage() {
                 <span className="settings-item-detail">Hotmart ID: {product.hotmart_product_id}</span>
               </div>
               <div className="settings-actions">
+                <button className="btn btn-secondary btn-sm" onClick={() => openEditProduct(product)}>
+                  Editar
+                </button>
                 <button className="btn btn-danger btn-sm" onClick={() => deleteProduct(product.id)}>
                   Remover
                 </button>
@@ -368,9 +399,9 @@ export default function SettingsPage() {
 
       {/* PRODUCT MODAL */}
       {showProductModal && (
-        <div className="modal-overlay" onClick={() => setShowProductModal(false)}>
+        <div className="modal-overlay" onClick={closeProductModal}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3 className="modal-title">Adicionar Produto</h3>
+            <h3 className="modal-title">{editingProductId ? 'Editar Produto' : 'Adicionar Produto'}</h3>
             <form onSubmit={addProduct}>
               <div className="form-group">
                 <label className="form-label">Nome do Produto</label>
@@ -394,11 +425,11 @@ export default function SettingsPage() {
                 />
               </div>
               <div className="modal-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowProductModal(false)}>
+                <button type="button" className="btn btn-secondary" onClick={closeProductModal}>
                   Cancelar
                 </button>
                 <button type="submit" className="btn btn-primary" style={{ width: 'auto' }}>
-                  Salvar
+                  {editingProductId ? 'Salvar Alterações' : 'Salvar'}
                 </button>
               </div>
             </form>
