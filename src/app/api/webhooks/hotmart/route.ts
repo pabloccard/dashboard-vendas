@@ -23,7 +23,7 @@ const EVENT_STATUS_MAP: Record<string, string> = {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const hottok = request.headers.get('x-hotmart-hottok') || body?.hottok;
+    const hottok = request.headers.get('x-hotmart-hottok') || body?.hottok || request.nextUrl.searchParams.get('hottok');
 
     if (!hottok) {
       return NextResponse.json({ error: 'Missing hottok' }, { status: 401 });
@@ -61,9 +61,9 @@ export async function POST(request: NextRequest) {
     const commissions = data?.commissions || [];
     const buyer = data?.buyer;
 
-    // Get gross value
-    const grossValue = purchase?.price?.value || 0;
-    const currency = purchase?.price?.currency_value || 'BRL';
+    // Get gross value (prefer original_offer_price to avoid local currency mismatches with the commission conversion)
+    const grossValue = purchase?.original_offer_price?.value || purchase?.price?.value || 0;
+    const currency = purchase?.original_offer_price?.currency_value || purchase?.price?.currency_value || 'BRL';
 
     // Get net value (producer commission)
     const producerCommission = commissions.find(
