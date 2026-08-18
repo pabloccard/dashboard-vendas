@@ -30,6 +30,7 @@ export async function fetchAdAccountInsights(
     fields: 'spend,impressions,clicks',
     'time_range[since]': dateFrom,
     'time_range[until]': dateTo,
+    limit: '1000',
     access_token: accessToken,
   });
 

@@ -17,6 +17,15 @@ export default function DashboardPage() {
   const [customDate, setCustomDate] = useState<string>('');
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [selectedAdAccounts, setSelectedAdAccounts] = useState<string[]>([]);
+  
+  // Applied filters for fetching
+  const [appliedFilters, setAppliedFilters] = useState({
+    datePreset: 'today' as DatePreset,
+    customDate: '',
+    selectedProducts: [] as string[],
+    selectedAdAccounts: [] as string[],
+  });
+
   const [products, setProducts] = useState<Product[]>([]);
   const [adAccounts, setAdAccounts] = useState<any[]>([]);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
@@ -47,21 +56,21 @@ export default function DashboardPage() {
     fetchDropdowns();
   }, [userId, supabase]);
 
-  const fetchMetrics = useCallback(async () => {
+  const fetchMetrics = useCallback(async (filtersToUse = appliedFilters) => {
     if (!userId) return;
     setLoading(true);
 
     let from, to;
-    if (datePreset === 'custom' && customDate) {
-      from = customDate; to = customDate;
+    if (filtersToUse.datePreset === 'custom' && filtersToUse.customDate) {
+      from = filtersToUse.customDate; to = filtersToUse.customDate;
     } else {
-      const range = getDateRange(datePreset);
+      const range = getDateRange(filtersToUse.datePreset);
       from = range.from; to = range.to;
     }
 
     const params = new URLSearchParams({ date_from: from, date_to: to, user_id: userId });
-    if (selectedProducts.length > 0) params.set('product_ids', selectedProducts.join(','));
-    if (selectedAdAccounts.length > 0) params.set('ad_account_ids', selectedAdAccounts.join(','));
+    if (filtersToUse.selectedProducts.length > 0) params.set('product_ids', filtersToUse.selectedProducts.join(','));
+    if (filtersToUse.selectedAdAccounts.length > 0) params.set('ad_account_ids', filtersToUse.selectedAdAccounts.join(','));
 
     try {
       const res = await fetch(`/api/metrics?${params.toString()}`);
@@ -74,26 +83,30 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [userId, datePreset, customDate, selectedProducts, selectedAdAccounts]);
+  }, [userId, appliedFilters]);
 
-  const syncAndFetch = useCallback(async (isManualSync = false) => {
+  const syncAndFetch = useCallback(async (isManualSync = false, filtersToUse = appliedFilters) => {
     if (!userId) return;
     if (isManualSync) setSyncing(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       await fetch('/api/sync/facebook', { method: 'POST', headers: { 'x-user-token': session?.access_token || '' } });
-      await fetchMetrics();
+      await fetchMetrics(filtersToUse);
     } catch (err) {
       console.error('Sync failed:', err);
-      await fetchMetrics();
+      await fetchMetrics(filtersToUse);
     } finally {
       if (isManualSync) setSyncing(false);
     }
-  }, [userId, fetchMetrics, supabase.auth]);
+  }, [userId, fetchMetrics, supabase.auth, appliedFilters]);
 
+  // Initial load
   useEffect(() => {
-    if (userId) { fetchMetrics(); syncAndFetch(); }
-  }, [userId, fetchMetrics, syncAndFetch]);
+    if (userId) { 
+      syncAndFetch(); 
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   const profit = metrics?.profit || 0;
   const roi = metrics?.roi || 0;
@@ -110,7 +123,11 @@ export default function DashboardPage() {
           <DateFilter selected={datePreset} customDate={customDate} onChange={(p, d) => { setDatePreset(p); if (d) setCustomDate(d); }} />
           <AdAccountFilter accounts={adAccounts} selectedIds={selectedAdAccounts} onChange={setSelectedAdAccounts} />
           <ProductFilter products={products} selectedIds={selectedProducts} onChange={setSelectedProducts} />
-          <button className="btn btn-secondary btn-sm" onClick={() => syncAndFetch(true)} disabled={syncing || loading} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <button className="btn btn-secondary btn-sm" onClick={() => {
+            const newFilters = { datePreset, customDate, selectedProducts, selectedAdAccounts };
+            setAppliedFilters(newFilters);
+            syncAndFetch(true, newFilters);
+          }} disabled={syncing || loading} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={syncing ? 'spin-animation' : ''}>
               <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.92-10.26" />
             </svg>
