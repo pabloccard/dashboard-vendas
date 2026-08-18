@@ -6,12 +6,12 @@ import { fetchAdAccountInsights } from '@/lib/facebook';
 // This route ONLY performs GET requests to the Facebook API
 // Required permission: ads_read (ONLY)
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
 export async function POST(request: NextRequest) {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co',
+    process.env.SUPABASE_SERVICE_ROLE_KEY || 'placeholder'
+  );
+
   try {
     // Verify cron secret for automated calls
     const authHeader = request.headers.get('authorization');

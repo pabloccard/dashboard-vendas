@@ -2,11 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { convertToMBRL } from '@/lib/exchange-rate';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
 // Status mapping from Hotmart event types
 const EVENT_STATUS_MAP: Record<string, string> = {
   PURCHASE_APPROVED: 'APPROVED',
@@ -21,6 +16,11 @@ const EVENT_STATUS_MAP: Record<string, string> = {
 };
 
 export async function POST(request: NextRequest) {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co',
+    process.env.SUPABASE_SERVICE_ROLE_KEY || 'placeholder'
+  );
+
   try {
     const body = await request.json();
     const hottok = request.headers.get('x-hotmart-hottok') || body?.hottok || request.nextUrl.searchParams.get('hottok');
