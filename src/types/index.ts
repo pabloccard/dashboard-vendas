@@ -33,6 +33,7 @@ export type Transaction = {
   payment_type: string | null;
   buyer_name: string | null;
   buyer_email: string | null;
+  buyer_country?: string | null;
   transaction_date: string;
   hotmart_event_id: string | null;
   created_at: string;
@@ -84,6 +85,12 @@ export type DailyBreakdown = {
   approved_count: number;
   pending_count: number;
   refunded_count: number;
+};
+
+export type CountryStat = {
+  country: string;
+  product: string;
+  quantity: number;
 };
 
 export type DatePreset = 'today' | 'yesterday' | 'last_7_days' | 'last_30_days' | 'custom';

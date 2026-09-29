@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     const dateFromStart = `${dateFrom}T00:00:00-03:00`;
     const dateToEnd = `${dateTo}T23:59:59-03:00`;
 
-    // ===== TRANSACTIONS QUERY =====
+    // ===== BUILD QUERIES =====
     let txQuery = supabase
       .from('transactions')
       .select('*, product:products(name)')
@@ -41,23 +41,6 @@ export async function GET(request: NextRequest) {
       txQuery = txQuery.in('product_id', productIds);
     }
 
-    const { data: transactions, error: txError } = await txQuery;
-
-    if (txError) {
-      console.error('Transactions query error:', txError);
-      return NextResponse.json({ error: txError.message }, { status: 500 });
-    }
-
-    // ===== SETTINGS QUERY =====
-    const { data: settings } = await supabase
-      .from('settings')
-      .select('fb_tax_percentage')
-      .eq('user_id', userId)
-      .single();
-    
-    const taxMultiplier = 1 + ((settings?.fb_tax_percentage || 0) / 100);
-
-    // ===== AD SPEND QUERY =====
     let adQuery = supabase
       .from('ad_spend_daily')
       .select('*')
@@ -69,10 +52,24 @@ export async function GET(request: NextRequest) {
       adQuery = adQuery.in('ad_account_id', adAccountIds);
     }
 
-    const { data: adSpend, error: adError } = await adQuery;
+    // ===== RUN ALL QUERIES IN PARALLEL =====
+    const [txResult, settingsResult, adResult] = await Promise.all([
+      txQuery,
+      supabase.from('settings').select('fb_tax_percentage').eq('user_id', userId).single(),
+      adQuery,
+    ]);
 
-    if (adError) {
-      console.error('Ad spend query error:', adError);
+    const transactions = txResult.data;
+    if (txResult.error) {
+      console.error('Transactions query error:', txResult.error);
+      return NextResponse.json({ error: txResult.error.message }, { status: 500 });
+    }
+
+    const taxMultiplier = 1 + ((settingsResult.data?.fb_tax_percentage || 0) / 100);
+    const adSpend = adResult.data;
+
+    if (adResult.error) {
+      console.error('Ad spend query error:', adResult.error);
       // Non-fatal: continue without ad data
     }
 
@@ -169,12 +166,41 @@ export async function GET(request: NextRequest) {
       }))
       .sort((a, b) => b.date.localeCompare(a.date)); // Most recent first
 
-    // Sort transactions by date descending
-    const rawTransactions = (transactions || []).sort((a, b) => 
-      new Date(b.transaction_date).getTime() - new Date(a.transaction_date).getTime()
-    );
+    // Return only the 8 most recent transactions with minimal fields
+    const recentTransactions = (transactions || [])
+      .sort((a, b) => 
+        new Date(b.transaction_date).getTime() - new Date(a.transaction_date).getTime()
+      )
+      .slice(0, 8)
+      .map((tx) => ({
+        id: tx.id,
+        status: tx.status,
+        net_value_brl: tx.net_value_brl,
+        gross_value_brl: tx.gross_value_brl,
+        transaction_date: tx.transaction_date,
+        buyer_name: tx.buyer_name,
+        product: tx.product,
+      }));
 
-    return NextResponse.json({ metrics, daily, transactions: rawTransactions }, { status: 200 });
+    // ===== COUNTRY STATS =====
+    const countryMap = new Map<string, {
+      country: string;
+      product: string;
+      quantity: number;
+    }>();
+    
+    for (const tx of approvedTx) {
+      const country = tx.buyer_country || 'BR'; // Assuming BR for old ones mostly, or 'Desconhecido'
+      const product = tx.product?.name || 'Produto';
+      const key = `${country}_${product}`;
+      
+      const entry = countryMap.get(key) || { country, product, quantity: 0 };
+      entry.quantity += 1;
+      countryMap.set(key, entry);
+    }
+    const countryStats = Array.from(countryMap.values()).sort((a, b) => b.quantity - a.quantity);
+
+    return NextResponse.json({ metrics, daily, transactions: recentTransactions, countryStats }, { status: 200 });
   } catch (error) {
     console.error('Metrics error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

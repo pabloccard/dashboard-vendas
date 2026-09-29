@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { DashboardMetrics, DailyBreakdown, DatePreset, Product, Transaction } from '@/types';
+import { DashboardMetrics, DailyBreakdown, DatePreset, Product, Transaction, CountryStat } from '@/types';
 import { formatCurrency, formatPercentage, formatNumber, getDateRange } from '@/lib/utils';
 import DateFilter from '@/components/DateFilter';
 import ProductFilter from '@/components/ProductFilter';
@@ -10,6 +10,7 @@ import AdAccountFilter from '@/components/AdAccountFilter';
 import DailyTable from '@/components/DailyTable';
 import MainChart from '@/components/MainChart';
 import MiniChart from '@/components/MiniChart';
+import CountryTable from '@/components/CountryTable';
 
 export default function DashboardPage() {
   const supabase = createClient();
@@ -31,6 +32,7 @@ export default function DashboardPage() {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [daily, setDaily] = useState<DailyBreakdown[]>([]);
   const [recentTx, setRecentTx] = useState<Transaction[]>([]);
+  const [countryStats, setCountryStats] = useState<CountryStat[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -56,9 +58,9 @@ export default function DashboardPage() {
     fetchDropdowns();
   }, [userId, supabase]);
 
-  const fetchMetrics = useCallback(async (filtersToUse = appliedFilters) => {
+  const fetchMetrics = useCallback(async (filtersToUse = appliedFilters, showLoading = true) => {
     if (!userId) return;
-    setLoading(true);
+    if (showLoading) setLoading(true);
 
     let from, to;
     if (filtersToUse.datePreset === 'custom' && filtersToUse.customDate) {
@@ -77,7 +79,8 @@ export default function DashboardPage() {
       const data = await res.json();
       if (data.metrics) setMetrics(data.metrics);
       if (data.daily) setDaily(data.daily);
-      if (data.transactions) setRecentTx(data.transactions.slice(0, 8));
+      if (data.transactions) setRecentTx(data.transactions);
+      if (data.countryStats) setCountryStats(data.countryStats);
     } catch (err) {
       console.error('Failed to fetch metrics:', err);
     } finally {
@@ -85,20 +88,33 @@ export default function DashboardPage() {
     }
   }, [userId, appliedFilters]);
 
-  const syncAndFetch = useCallback(async (isManualSync = false, filtersToUse = appliedFilters) => {
-    if (!userId) return;
-    if (isManualSync) setSyncing(true);
+  const syncFacebook = useCallback(async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       await fetch('/api/sync/facebook', { method: 'POST', headers: { 'x-user-token': session?.access_token || '' } });
-      await fetchMetrics(filtersToUse);
     } catch (err) {
       console.error('Sync failed:', err);
-      await fetchMetrics(filtersToUse);
+    }
+  }, [supabase.auth]);
+
+  const syncAndFetch = useCallback(async (isManualSync = false, filtersToUse = appliedFilters) => {
+    if (!userId) return;
+
+    // Show data IMMEDIATELY with what's already in the database
+    await fetchMetrics(filtersToUse);
+
+    // Then sync Facebook in background and silently refresh
+    if (isManualSync) setSyncing(true);
+    try {
+      await syncFacebook();
+      // Silently refresh with updated ad spend data (no loading spinner)
+      await fetchMetrics(filtersToUse, false);
+    } catch (err) {
+      console.error('Sync failed:', err);
     } finally {
       if (isManualSync) setSyncing(false);
     }
-  }, [userId, fetchMetrics, supabase.auth, appliedFilters]);
+  }, [userId, fetchMetrics, syncFacebook, appliedFilters]);
 
   // Initial load
   useEffect(() => {
@@ -227,7 +243,10 @@ export default function DashboardPage() {
           </div>
 
           {/* ===== TWO COLUMNS ===== */}
-          <div className="content-grid" style={{ gridTemplateColumns: '1fr' }}>
+          <div className="content-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+            
+            {/* Left — Country Stats */}
+            <CountryTable data={countryStats} loading={loading} />
 
             {/* Right — Recent activity */}
             <div className="card">

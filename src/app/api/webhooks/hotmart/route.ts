@@ -63,32 +63,48 @@ export async function POST(request: NextRequest) {
 
     // Get gross value (prefer original_offer_price to avoid local currency mismatches with the commission conversion)
     const grossValue = purchase?.original_offer_price?.value || purchase?.price?.value || 0;
-    const currency = purchase?.original_offer_price?.currency_value || purchase?.price?.currency_value || 'BRL';
+    const grossCurrency = purchase?.original_offer_price?.currency_value || purchase?.price?.currency_value || 'BRL';
 
-    // Get net value (producer commission)
+    // Get net value (producer commission) — note: commission has its own currency_value
     const producerCommission = commissions.find(
       (c: any) => c.source === 'PRODUCER'
     );
     const netValue = producerCommission?.value || grossValue;
+    const netCurrency = producerCommission?.currency_value || grossCurrency;
 
-    // Convert to BRL
+    // Convert gross to BRL
     let grossBRL = grossValue;
-    let netBRL = netValue;
     let exchangeRate = 1;
 
-    if (currency !== 'BRL') {
-      if (producerCommission?.currency_conversion?.converted_to_currency === 'BRL') {
-        // Use Hotmart's native conversion
-        netBRL = producerCommission.currency_conversion.converted_value;
-        exchangeRate = producerCommission.currency_conversion.conversion_rate || 1;
+    if (grossCurrency !== 'BRL') {
+      // Best option: if the buyer's price is already in BRL, use it directly
+      // (e.g., Brazilian buyer purchasing a USD-priced product)
+      const priceBRL = purchase?.price?.currency_value === 'BRL' ? purchase.price.value : null;
+
+      if (priceBRL) {
+        grossBRL = priceBRL;
+        exchangeRate = grossValue > 0 ? priceBRL / grossValue : 1;
+      } else if (producerCommission?.currency_conversion?.conversion_rate) {
+        // Use Hotmart's conversion rate from the commission
+        exchangeRate = producerCommission.currency_conversion.conversion_rate;
         grossBRL = grossValue * exchangeRate;
       } else {
         // Fallback to our exchange rate API
-        const convertedGross = await convertToMBRL(grossValue, currency);
-        const convertedNet = await convertToMBRL(netValue, currency);
+        const convertedGross = await convertToMBRL(grossValue, grossCurrency);
         grossBRL = convertedGross.valueBRL;
-        netBRL = convertedNet.valueBRL;
         exchangeRate = convertedGross.exchangeRate;
+      }
+    }
+
+    // Convert net to BRL (only if commission currency is not already BRL)
+    let netBRL = netValue;
+
+    if (netCurrency !== 'BRL') {
+      if (producerCommission?.currency_conversion?.converted_to_currency === 'BRL') {
+        netBRL = producerCommission.currency_conversion.converted_value;
+      } else {
+        const convertedNet = await convertToMBRL(netValue, netCurrency);
+        netBRL = convertedNet.valueBRL;
       }
     }
 
@@ -151,13 +167,14 @@ export async function POST(request: NextRequest) {
         status,
         gross_value: grossValue,
         net_value: netValue,
-        original_currency: currency,
+        original_currency: grossCurrency,
         exchange_rate: exchangeRate,
         gross_value_brl: grossBRL,
         net_value_brl: netBRL,
         payment_type: purchase?.payment?.type || null,
         buyer_name: buyer?.name || null,
         buyer_email: buyer?.email || null,
+        buyer_country: buyer?.address?.country_iso || null,
         transaction_date: purchase?.approved_date
           ? new Date(purchase.approved_date).toISOString()
           : purchase?.order_date

@@ -58,9 +58,8 @@ export async function POST(request: NextRequest) {
     const dateFrom = pastDate.toISOString().split('T')[0];
     const dateTo = today.toISOString().split('T')[0];
 
-    const results = [];
-
-    for (const account of adAccounts) {
+    // Fetch all accounts in PARALLEL instead of sequentially
+    const accountPromises = adAccounts.map(async (account) => {
       try {
         // READ-ONLY: Only GET request to fetch insights
         const insights = await fetchAdAccountInsights(
@@ -70,35 +69,37 @@ export async function POST(request: NextRequest) {
           dateTo
         );
 
-        for (const insight of insights) {
-          await supabase.from('ad_spend_daily').upsert(
-            {
-              user_id: account.user_id,
-              ad_account_id: account.id,
-              date: insight.date_start,
-              spend: parseFloat(insight.spend) || 0,
-              impressions: parseInt(insight.impressions) || 0,
-              clicks: parseInt(insight.clicks) || 0,
-              currency: 'BRL',
-            },
-            {
-              onConflict: 'ad_account_id,date',
-            }
-          );
+        // BATCH upsert all days at once instead of one-by-one
+        if (insights.length > 0) {
+          const records = insights.map((insight) => ({
+            user_id: account.user_id,
+            ad_account_id: account.id,
+            date: insight.date_start,
+            spend: parseFloat(insight.spend) || 0,
+            impressions: parseInt(insight.impressions) || 0,
+            clicks: parseInt(insight.clicks) || 0,
+            currency: 'BRL',
+          }));
+
+          await supabase.from('ad_spend_daily').upsert(records, {
+            onConflict: 'ad_account_id,date',
+          });
         }
 
-        results.push({
+        return {
           account: account.fb_account_name || account.fb_account_id,
           synced: insights.length,
-        });
+        };
       } catch (error) {
         console.error(`Error syncing account ${account.fb_account_id}:`, error);
-        results.push({
+        return {
           account: account.fb_account_name || account.fb_account_id,
           error: String(error),
-        });
+        };
       }
-    }
+    });
+
+    const results = await Promise.all(accountPromises);
 
     return NextResponse.json({ results }, { status: 200 });
   } catch (error) {
